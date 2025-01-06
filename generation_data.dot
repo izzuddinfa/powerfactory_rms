@@ -1,0 +1,25 @@
+digraph {
+  node [margin=0]
+  edge [len=10]
+  
+  Start [shape=ellipse];
+
+  Step1 [label="Input fault line location, \nrelative fault location, \nfault duration, and load level", shape=parallelogram, height=1];
+  Step2 [label="Perform optimal power flow \nand load flow", shape=box, margin="0.1,0"];
+  Step3 [label="Input generator dispatch result", shape=box, margin="0.1,0"];
+  Step4 [label="Perform three-phase fault simulation", shape=box, margin="0.1,0"];
+  Step5 [label="Perform dynamic simulation", shape=box, margin="0.1,0"];
+  Step6 [label="Collect bus voltage magnitude (V), \nbus voltage angle (θ), \nand out-of-step status", shape=box,  margin="0.1,0.1"];
+  Step7 [label="Perform data labeling \nbased on out-of-step status", shape=box, margin="0.1,0.1"];
+
+  End [shape=ellipse];
+
+  Start -> Step1;
+  Step1 -> Step2;
+  Step2 -> Step3;
+  Step3 -> Step4;
+  Step4 -> Step5;
+  Step5 -> Step6;
+  Step6 -> Step7;
+  Step7 -> End;
+}

@@ -79,6 +79,64 @@ class PowerFactorySim:
             trf.ionlyPre = 1 # Atur dalam DC OPF berlaku untuk pre- dan post-fault position
             trf.i_uoptCont = 0 # Atur control mode tap changer ke continous
 
+    # Fungsi untuk simulasi aliran daya
+    def ldfAnalysis(self):
+        self.ldf = self.app.GetFromStudyCase('ComLdf')
+        self.ldf.iopt_plim = 1
+        self.ldf.iopt_lim = 1
+        self.ldf.Execute()
+
+    # Fungsi untuk simulasi optimal power flow
+    def opfAnalysis(self):
+        # Configure OPF settings
+        self.opf = self.app.GetFromStudyCase("ComOpf")
+        self.opf.iopt_ACDC = 0  # For AC calculation
+        self.opf.iopt_obj = 'los'  # Minimize losses ('cst' for cost)
+        self.opf.iopt_pd = 1
+        self.opf.iopt_qd = 1
+        self.opf.iopt_trf = 1
+        self.opf.iopt_sht = 0
+        self.opf.iopt_brnch = 1
+        self.opf.iopt_genP = 1
+        self.opf.iopt_genQ = 1
+        self.opf.iopt_bus = 1
+        self.opf.iopt_add = 0
+        self.opf.Execute()
+
+        # Collect transformer data into a dictionary
+        trf_data = {
+            trf.loc_name: {"tap": trf.GetAttribute("c:nntap")}
+            for trf in self.trfObj if not trf.GetAttribute("e:outserv")
+        }
+
+        # Collect generator data into a dictionary
+        gen_data = {
+            gen.loc_name: {
+                "parallel": gen.ngnum,
+                "P": gen.GetAttribute("m:P:bus1"),
+                "Q": gen.GetAttribute("m:Q:bus1"),
+                "pf": gen.GetAttribute("m:cosphi:bus1"),
+                "V": gen.GetAttribute("m:u1:bus1"),
+            }
+            for gen in self.GenObj if not gen.GetAttribute("e:outserv")
+        }
+
+        # Apply transformer tap settings
+        for trf in self.trfObj:
+            if trf.loc_name in trf_data:
+                trf.nntap = int(trf_data[trf.loc_name]["tap"])
+
+        # Apply generator settings
+        for gen in self.GenObj:
+            if gen.loc_name in gen_data:
+                gen_info = gen_data[gen.loc_name]
+                gen.iv_mode = 1
+                gen.mode_inp = 'DEF'
+                gen.pgini = float(gen_info["P"] / gen_info["parallel"])
+                gen.usetp = float(gen_info["V"])
+                gen.cosgini = float(gen_info["pf"])
+                gen.pf_recap = 0 if gen_info["Q"] > 0 else 1
+
     # ==========================================================================
 
     def short_circuit_setup(self, fault_location, fault_line, fault_duration):

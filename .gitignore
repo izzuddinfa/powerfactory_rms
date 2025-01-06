@@ -1,3 +1,4 @@
 venv
 *.ps1
 __pycache__
+coretan.py
