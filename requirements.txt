@@ -5,3 +5,4 @@ openpyxl
 colormaps
 pyarrow
 graphviz
+tables

@@ -87,11 +87,12 @@ class PowerFactorySim:
         self.ldf.Execute()
 
     # Fungsi untuk simulasi optimal power flow
-    def opfAnalysis(self):
+    def opfAnalysis(self, iopt_obj='dev'):
         # Configure OPF settings
         self.opf = self.app.GetFromStudyCase("ComOpf")
         self.opf.iopt_ACDC = 0  # For AC calculation
-        self.opf.iopt_obj = 'los'  # Minimize losses ('cst' for cost)
+        self.opf.iopt_obj = iopt_obj  # 'dev' Minimize control variable deviation, 'los' total losses
+        self.opf.isWeightByCosts = 0 # Based on rated power/control variable range
         self.opf.iopt_pd = 1
         self.opf.iopt_qd = 1
         self.opf.iopt_trf = 1
@@ -118,7 +119,7 @@ class PowerFactorySim:
                 "pf": gen.GetAttribute("m:cosphi:bus1"),
                 "V": gen.GetAttribute("m:u1:bus1"),
             }
-            for gen in self.GenObj if not gen.GetAttribute("e:outserv")
+            for gen in self.genObj if not gen.GetAttribute("e:outserv")
         }
 
         # Apply transformer tap settings
@@ -127,7 +128,7 @@ class PowerFactorySim:
                 trf.nntap = int(trf_data[trf.loc_name]["tap"])
 
         # Apply generator settings
-        for gen in self.GenObj:
+        for gen in self.genObj:
             if gen.loc_name in gen_data:
                 gen_info = gen_data[gen.loc_name]
                 gen.iv_mode = 1
@@ -136,6 +137,17 @@ class PowerFactorySim:
                 gen.usetp = float(gen_info["V"])
                 gen.cosgini = float(gen_info["pf"])
                 gen.pf_recap = 0 if gen_info["Q"] > 0 else 1
+
+    def getDispatch(self):
+        gen = pd.DataFrame({
+            "name": [obj.loc_name for obj in self.genObj],
+            "P": [obj.GetAttribute("m:P:bus1") for obj in self.genObj],
+            "Q": [obj.GetAttribute("m:Q:bus1") for obj in self.genObj],
+            "pf": [obj.GetAttribute("m:cosphi:bus1") for obj in self.genObj],
+            "V": [obj.GetAttribute("m:u1:bus1") for obj in self.genObj],
+            "parallel": [obj.ngnum for obj in self.genObj],
+        })
+        return gen
 
     # ==========================================================================
 
