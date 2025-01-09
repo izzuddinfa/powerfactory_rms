@@ -198,7 +198,7 @@ class PowerFactorySim:
         switch_event.p_target = fault_line
 
     def rmsSimulation(self, monitored_variables, t_start=-100, t_step=10, t_stop=30):
-        self.res = self.app.GetFromStudyCase('*.ElmRes')
+        self.res = self.app.GetFromStudyCase('All calculations.ElmRes')
         
         # Add monitored variables to result object
         for elm_name, var_names in monitored_variables.items():
@@ -228,6 +228,39 @@ class PowerFactorySim:
         self.inc.Execute()
         self.sim.Execute()
 
+
+    def get_dynamic_results(self ,elm_name=None, var_name=None, offset=10000, time_step=False):
+
+        """
+        Simulation has been executed by run_dynamic_sim. This function
+        gets results assuming the variables were called when setting up the simulation.
+        Arguments:
+             elm_name - element name (ie bus or line)
+             var_name - name of variable
+             offset - from what time step to truncate data, e.g if pre contingency data is not required
+        returns:
+            time stamp and required variables as lists
+        """
+        # read the results and time steps and store them as lists
+        time = []
+        var_values = []
+        # load results from file
+        self.app.ResLoadData(self.res)
+        # get number of rows (time steps) in the results file
+        n_rows = self.app.ResGetValueCount(self.res, 0)
+        # get network element of interest
+        if time_step:
+            for i in range(0, n_rows-offset):
+                time.append(self.app.ResGetData(self.res, i+offset, -1)[1])
+            return time
+        else:
+            element = self.app.GetCalcRelevantObjects(elm_name)[0]
+            # find column in results file which holds the result of interest
+            col_index = self.app.ResGetIndex(
+                self.res, element, var_name)
+            for i in range(0, n_rows-offset):
+                var_values.append(self.app.ResGetData(self.res, i+offset, col_index)[1])
+            return var_values
 
     # ==========================================================================
 
