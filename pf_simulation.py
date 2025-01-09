@@ -13,6 +13,13 @@ from os import listdir
 from os.path import isfile, join
 import colormaps as cmaps 
 
+# Kelas untuk menyimpan variabel hasil load flow
+class LdfResult:
+    def __init__(self, load, gen, trf):
+        self.load = load
+        self.gen = gen
+        self.trf = trf
+
 class PowerFactorySim:
     def __init__(self, folder_name='', project_name='Project', study_case_name='Study Case'):
         # Aktifkan project
@@ -79,13 +86,6 @@ class PowerFactorySim:
             trf.ionlyPre = 1 # Atur dalam DC OPF berlaku untuk pre- dan post-fault position
             trf.i_uoptCont = 0 # Atur control mode tap changer ke continous
 
-    # Fungsi untuk simulasi aliran daya
-    def ldfAnalysis(self):
-        self.ldf = self.app.GetFromStudyCase('ComLdf')
-        self.ldf.iopt_plim = 1
-        self.ldf.iopt_lim = 1
-        self.ldf.Execute()
-
     # Fungsi untuk simulasi optimal power flow
     def opfAnalysis(self, iopt_obj='dev'):
         # Configure OPF settings
@@ -137,21 +137,42 @@ class PowerFactorySim:
                 gen.usetp = float(gen_info["V"])
                 gen.cosgini = float(gen_info["pf"])
                 gen.pf_recap = 0 if gen_info["Q"] > 0 else 1
+    
+    
+    # Fungsi untuk simulasi aliran daya
+    def ldfAnalysis(self):
+        self.ldf = self.app.GetFromStudyCase('ComLdf')
+        self.ldf.iopt_plim = 1
+        self.ldf.iopt_lim = 1
+        self.ldf.Execute()
+        return self.getResultLdf()
 
-    def getDispatch(self):
-        gen = pd.DataFrame({
-            "name": [obj.loc_name for obj in self.genObj],
-            "P": [obj.GetAttribute("m:P:bus1") for obj in self.genObj],
-            "Q": [obj.GetAttribute("m:Q:bus1") for obj in self.genObj],
-            "pf": [obj.GetAttribute("m:cosphi:bus1") for obj in self.genObj],
-            "V": [obj.GetAttribute("m:u1:bus1") for obj in self.genObj],
-            "parallel": [obj.ngnum for obj in self.genObj],
+    # Fungsi untuk mendapatkan data hasil load flow
+    def getResultLdf(self):
+        load = pd.DataFrame({
+            "name": [obj.GetAttribute("b:loc_name") for obj in self.loadObj],
+            "P": [obj.GetAttribute("m:P:bus1") for obj in self.loadObj],
+            "Q": [obj.GetAttribute("m:Q:bus1") for obj in self.loadObj]
         })
-        return gen
 
-    # ==========================================================================
-
-    def short_circuit_setup(self, fault_location, fault_line, fault_duration):
+        filteredObj = [obj for obj in self.genObj if not obj.GetAttribute("e:outserv")] # Filter hanya ambil generator yang aktif
+        gen = pd.DataFrame({
+            "name": [obj.loc_name for obj in filteredObj],
+            "parallel": [obj.ngnum for obj in filteredObj],
+            "V": [obj.GetAttribute("m:u1:bus1") for obj in filteredObj],
+            "pf": [obj.GetAttribute("m:cosphi:bus1") for obj in filteredObj],
+            "P": [obj.GetAttribute("m:P:bus1") for obj in filteredObj],
+            "Q": [obj.GetAttribute("m:Q:bus1") for obj in filteredObj],
+        })
+            
+        trf = pd.DataFrame({
+            "name": [obj.loc_name for obj in self.trfObj],
+            "tap": [obj.GetAttribute("c:nntap") for obj in self.trfObj]
+        })
+                
+        return LdfResult(load, gen, trf)
+    
+    def scSetup(self, fault_location, fault_line, fault_duration):
         events = self.app.GetFromStudyCase('IntEvt')
         event_list = events.GetContents()
         
@@ -176,7 +197,7 @@ class PowerFactorySim:
         switch_event.time = shc_event.time + fault_duration
         switch_event.p_target = fault_line
 
-    def simulation_rms(self, monitored_variables, t_start=-100, t_step=10, t_stop=30):
+    def rmsSimulation(self, monitored_variables, t_start=-100, t_step=10, t_stop=30):
         self.res = self.app.GetFromStudyCase('*.ElmRes')
         
         # Add monitored variables to result object
@@ -206,6 +227,12 @@ class PowerFactorySim:
         # Execute the simulation
         self.inc.Execute()
         self.sim.Execute()
+
+
+    # ==========================================================================
+
+
+
 
     def save_load_and_gen(self, load_level, path):
         op_scen = f'{int(round(load_level*100, 0))} persen beban'

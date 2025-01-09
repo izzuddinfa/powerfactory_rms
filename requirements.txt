@@ -6,3 +6,4 @@ colormaps
 pyarrow
 graphviz
 tables
+tqdm
