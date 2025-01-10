@@ -20,7 +20,7 @@ class LdfResult:
         self.trf = trf
 
 class PowerFactorySim:
-    def __init__(self, folder_name='', project_name='Project', study_case_name='Study Case', scenario_dict=None):
+    def __init__(self, folder_name='', project_name='Project', study_case_name='Study Case'):
         # Aktifkan project
         self.folder_name = folder_name
         self.project_name = project_name
@@ -35,11 +35,6 @@ class PowerFactorySim:
         self.trfObj = self.app.GetCalcRelevantObjects("*.ElmTr2")
         self.loadObj=self.app.GetCalcRelevantObjects("*.ElmLod")
 
-        # Komponen scenario
-        self.load_level = scenario_dict['load_level']
-        self.f_line = scenario_dict['f_line']
-        self.f_location = scenario_dict['f_location']
-        self.f_duration = scenario_dict['f_duration']
 
     # Fungsi untuk mengaktifkan project
     def _activate_project(self):
@@ -66,31 +61,43 @@ class PowerFactorySim:
         return load, gen
 
     # Fungsi untuk membuat scenario list
-    def createScenario(self):
-        iteration_counter = 1
-        iteration_data = []
-        total_iterations = len(self.load_level) * len(self.f_line) * len(self.f_location) * len(self.f_duration)
-        num_digits = len(str(total_iterations))
-        for load_lvl_iter in self.load_level:
-            for f_line_iter, f_loc_iter, f_dur_iter in itertools.product(self.f_line, self.f_location, self.f_duration):
-                    filename = f'scenario_{iteration_counter:0{num_digits}d}'
-                    iteration_data.append({
-                        "scenario": filename,
-                        "load_level": load_lvl_iter,
-                        "f_line": f_line_iter,
-                        "f_location": f_loc_iter,
-                        "f_duration": f_dur_iter
-                    })
-                    iteration_counter += 1
-        pd.DataFrame(iteration_data).to_csv("output/scenario_metadata.csv", index=False)
+    def createScenario(self, scenario_dict, save=False):
+        # Komponen scenario
+        self.load_level = scenario_dict['load_level']
+        self.f_line = scenario_dict['f_line']
+        self.f_location = scenario_dict['f_location']
+        self.f_duration = scenario_dict['f_duration']
+
+        if os.path.exists("output/scenario_metadata.csv"):
+            if save:
+                flag = input("Scenario metadata.csv exist, are you sure want to rewrite? (y/n)")
+                if flag.lower() == 'y':
+                    iteration_counter = 1
+                    iteration_data = []
+                    total_iterations = len(self.load_level) * len(self.f_line) * len(self.f_location) * len(self.f_duration)
+                    num_digits = len(str(total_iterations))
+                    for load_lvl_iter in self.load_level:
+                        for f_line_iter, f_loc_iter, f_dur_iter in itertools.product(self.f_line, self.f_location, self.f_duration):
+                                filename = f'scenario_{iteration_counter:0{num_digits}d}'
+                                iteration_data.append({
+                                    "scenario": filename,
+                                    "load_level": load_lvl_iter,
+                                    "f_line": f_line_iter,
+                                    "f_location": f_loc_iter,
+                                    "f_duration": f_dur_iter
+                                })
+                                iteration_counter += 1
+                    print("Scenario metadata created")
+                    pd.DataFrame(iteration_data).to_csv("output/scenario_metadata.csv", index=False)
+            return pd.read_csv("output/scenario_metadata.csv")
 
     # Fungsi untuk mengatur daya aktif dan daya reaktif beban
-    def loadSetup(self, load_default):
+    def loadSetup(self, load_level, load_default):
         load_data = load_default.set_index("name")[["P", "Q"]].to_dict("index")
         for load in self.loadObj:
             if load.loc_name in load_data:
-                load.plini = load_data[load.loc_name]["P"] * self.load_level
-                load.qlini = load_data[load.loc_name]["Q"] * self.load_level
+                load.plini = load_data[load.loc_name]["P"] * load_level
+                load.qlini = load_data[load.loc_name]["Q"] * load_level
     
     # Fungsi untuk mengatur parameter simulasi Optimal Power Flow
     def opfSetup(self):
@@ -223,9 +230,10 @@ class PowerFactorySim:
 
     def rmsSimulation(self, monitored_variables, t_start=-100, t_step=10, t_stop=30):
         self.res = self.app.GetFromStudyCase('All calculations.ElmRes')
+        self.monitored_variables = monitored_variables
         
         # Add monitored variables to result object
-        for elm_name, var_names in monitored_variables.items():
+        for elm_name, var_names in self.monitored_variables.items():
             elements = self.app.GetCalcRelevantObjects(elm_name)
             for element in elements:
                 self.res.AddVars(element, *var_names)
@@ -252,39 +260,42 @@ class PowerFactorySim:
         self.inc.Execute()
         self.sim.Execute()
 
+    def getRmsResult(self, base_dir, scenario):
+        full_dir = f"{base_dir}\{scenario}"
+        elements = list(variables.keys())
+        all_var = ['b:tnow']
+        all_elm = [self.res]
+        for element in elements:
+            elmObj = self.app.GetCalcRelevantObjects(element)
+            variables = self.monitored_variables[element]
+            for variable in variables:
+                all_elm.extend(elmObj)
+                all_var.extend([variable]*len(elmObj))
 
-    def get_dynamic_results(self ,elm_name=None, var_name=None, offset=10000, time_step=False):
+            # Export data
+            self.comRes = self.app.GetFromStudyCase("ComRes")
+            self.comRes.pResult = self.res
+            self.comRes.iopt_exp = 6 # to export as csv
+            self.comRes.f_name = f"{full_dir}.csv"
+            self.comRes.iopt_sep = 0 # to use not the system seperator
+            self.comRes.col_Sep = r','
+            self.comRes.dec_Sep = r'.'
+            self.comRes.iopt_honly = 0 # to export data and not only the header
+            self.comRes.iopt_csel = 1 # export only selected variables
+            self.comRes.iopt_locn = 1
+            self.comRes.ciopt_head = 1
+            self.comRes.element = all_elm
+            self.comRes.iopt_tsel = 1
+            self.comRes.to = 30
+            self.comRes.cfrom = 0
+            self.comRes.variable = all_var
+            self.comRes.Execute()
 
-        """
-        Simulation has been executed by run_dynamic_sim. This function
-        gets results assuming the variables were called when setting up the simulation.
-        Arguments:
-             elm_name - element name (ie bus or line)
-             var_name - name of variable
-             offset - from what time step to truncate data, e.g if pre contingency data is not required
-        returns:
-            time stamp and required variables as lists
-        """
-        # read the results and time steps and store them as lists
-        time = []
-        var_values = []
-        # load results from file
-        self.app.ResLoadData(self.res)
-        # get number of rows (time steps) in the results file
-        n_rows = self.app.ResGetValueCount(self.res, 0)
-        # get network element of interest
-        if time_step:
-            for i in range(0, n_rows-offset):
-                time.append(self.app.ResGetData(self.res, i+offset, -1)[1])
-            return time
-        else:
-            element = self.app.GetCalcRelevantObjects(elm_name)[0]
-            # find column in results file which holds the result of interest
-            col_index = self.app.ResGetIndex(
-                self.res, element, var_name)
-            for i in range(0, n_rows-offset):
-                var_values.append(self.app.ResGetData(self.res, i+offset, col_index)[1])
-            return var_values
+            data = pd.read_csv(f"{full_dir}.csv", header=[0, 1])
+            data = data.rename(columns={'All calculations': 'Time'})
+            data.columns = [f"{col[1].split()[0]}_{col[0]}" for col in data.columns]
+            data.to_parquet(f"{full_dir}.parquet")
+
 
     # ==========================================================================
 
