@@ -3,9 +3,8 @@ sys.path.append(r"C:\Program Files\DIgSILENT\PowerFactory 2023 SP3A\Python\3.11"
 import powerfactory as pf
 
 import os
-import numpy as np
+import itertools
 import pandas as pd
-import matplotlib.pyplot as plt
 import gc
 from openpyxl import Workbook
 from time import perf_counter
@@ -21,7 +20,7 @@ class LdfResult:
         self.trf = trf
 
 class PowerFactorySim:
-    def __init__(self, folder_name='', project_name='Project', study_case_name='Study Case'):
+    def __init__(self, folder_name='', project_name='Project', study_case_name='Study Case', scenario_dict=None):
         # Aktifkan project
         self.folder_name = folder_name
         self.project_name = project_name
@@ -35,6 +34,12 @@ class PowerFactorySim:
         self.lineObj = self.app.GetCalcRelevantObjects("*.ElmLne")
         self.trfObj = self.app.GetCalcRelevantObjects("*.ElmTr2")
         self.loadObj=self.app.GetCalcRelevantObjects("*.ElmLod")
+
+        # Komponen scenario
+        self.load_level = scenario_dict['load_level']
+        self.f_line = scenario_dict['f_line']
+        self.f_location = scenario_dict['f_location']
+        self.f_duration = scenario_dict['f_duration']
 
     # Fungsi untuk mengaktifkan project
     def _activate_project(self):
@@ -60,13 +65,32 @@ class PowerFactorySim:
         })
         return load, gen
 
+    # Fungsi untuk membuat scenario list
+    def createScenario(self):
+        iteration_counter = 1
+        iteration_data = []
+        total_iterations = len(self.load_level) * len(self.f_line) * len(self.f_location) * len(self.f_duration)
+        num_digits = len(str(total_iterations))
+        for load_lvl_iter in self.load_level:
+            for f_line_iter, f_loc_iter, f_dur_iter in itertools.product(self.f_line, self.f_location, self.f_duration):
+                    filename = f'scenario_{iteration_counter:0{num_digits}d}'
+                    iteration_data.append({
+                        "scenario": filename,
+                        "load_level": load_lvl_iter,
+                        "f_line": f_line_iter,
+                        "f_location": f_loc_iter,
+                        "f_duration": f_dur_iter
+                    })
+                    iteration_counter += 1
+        pd.DataFrame(iteration_data).to_csv("output/scenario_metadata.csv", index=False)
+
     # Fungsi untuk mengatur daya aktif dan daya reaktif beban
-    def loadSetup(self, load_level, load_default):
+    def loadSetup(self, load_default):
         load_data = load_default.set_index("name")[["P", "Q"]].to_dict("index")
         for load in self.loadObj:
             if load.loc_name in load_data:
-                load.plini = load_data[load.loc_name]["P"] * load_level
-                load.qlini = load_data[load.loc_name]["Q"] * load_level
+                load.plini = load_data[load.loc_name]["P"] * self.load_level
+                load.qlini = load_data[load.loc_name]["Q"] * self.load_level
     
     # Fungsi untuk mengatur parameter simulasi Optimal Power Flow
     def opfSetup(self):
