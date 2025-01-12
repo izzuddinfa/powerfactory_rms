@@ -7,3 +7,4 @@ pyarrow
 graphviz
 tables
 tqdm
+duckdb

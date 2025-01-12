@@ -61,7 +61,7 @@ class PowerFactorySim:
         return load, gen
 
     # Fungsi untuk membuat scenario list
-    def createScenario(self, scenario_dict, save=False):
+    def createScenario(self, scenario_dict, save=False, flag=None):
         # Komponen scenario
         self.load_level = scenario_dict['load_level']
         self.f_line = scenario_dict['f_line']
@@ -70,7 +70,8 @@ class PowerFactorySim:
 
         if os.path.exists("output/scenario_metadata.csv"):
             if save:
-                flag = input("Scenario metadata.csv exist, are you sure want to rewrite? (y/n)")
+                if flag is None:
+                    flag = input("Scenario metadata.csv exist, are you sure want to rewrite? (y/n)")
                 if flag.lower() == 'y':
                     iteration_counter = 1
                     iteration_data = []
@@ -82,7 +83,7 @@ class PowerFactorySim:
                                 iteration_data.append({
                                     "scenario": filename,
                                     "load_level": load_lvl_iter,
-                                    "f_line": f_line_iter,
+                                    "f_line": f'{f_line_iter.loc_name}.ElmLne',
                                     "f_location": f_loc_iter,
                                     "f_duration": f_dur_iter
                                 })
@@ -260,9 +261,9 @@ class PowerFactorySim:
         self.inc.Execute()
         self.sim.Execute()
 
-    def getRmsResult(self, base_dir, scenario):
+    def getResultRms(self, base_dir, scenario):
         full_dir = f"{base_dir}\{scenario}"
-        elements = list(variables.keys())
+        elements = list(self.monitored_variables.keys())
         all_var = ['b:tnow']
         all_elm = [self.res]
         for element in elements:
@@ -295,7 +296,7 @@ class PowerFactorySim:
             data = data.rename(columns={'All calculations': 'Time'})
             data.columns = [f"{col[1].split()[0]}_{col[0]}" for col in data.columns]
             data.to_parquet(f"{full_dir}.parquet")
-
+            os.remove(f"{full_dir}.csv")
 
     # ==========================================================================
 
